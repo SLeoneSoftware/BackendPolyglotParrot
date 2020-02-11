@@ -1,0 +1,481 @@
+#API For Polyglot Parrot Server Side
+
+#Acronyms
+#SID = Seen (Displayed) Information Database
+#AD = Analytics Database
+
+#Import statements
+from flask import Flask, jsonify, request, redirect, url_for, abort
+from flask_restful import Resource
+from werkzeug.utils import secure_filename
+from feedElement import feedElement
+import os
+import bson
+import pymongo
+import sqlite3
+import re
+from datetime import datetime
+from markovModel import markovModel
+import bcrypt
+from random import shuffle
+
+#App Set Up
+app = Flask(__name__)
+
+#Encryption Salt setup
+salt = bcrypt.gensalt()
+
+#Database Setup
+#SID
+#
+my_mongodb_password = 'REMOVED FOR SECURITY REASONS'
+client = pymongo.MongoClient("mongodb+srv://SLeoneSoftware:" + my_mongodb_password + "@polyglotparrotcluster-6nojv.gcp.mongodb.net/test?retryWrites=true&w=majority")
+SID = client.test
+#AD
+#DEFAULT_PATH = os.path.join(os.path.dirname(__file__), 'ad.sqlite3')
+#AD = sqlite3.connect(DEFAULT_PATH) 
+AD = sqlite3.connect('ad.sqlite3', check_same_thread=False) 
+
+#Question Database and ExamAnswers Database
+questions = sqlite3.connect('questions.sqlite3', check_same_thread=False) 
+examAnswers = sqlite3.connect('examAnswers.sqlite3', check_same_thread=False)
+
+#Resetting Weekly Progress
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+
+#Managing API Requests
+
+#User Data
+#Get: Returns a JSON File containing the user's information
+#Post: Posts a new user to the SI Database
+#Formating
+# userName -> user's chosen username
+# firstName -> user's given name
+# lastName -> user's surname
+# profilePic -> user's profile picture in a string base64
+#languages -> an array of languages the user is interested in/knows/learning
+#friends -> an array of the user's friends
+@app.route('/userData/<userName>/<password>/<firstName>/<lastName>', methods = ['POST'])
+@app.route('/userData/<userName>/<password>', methods = ['GET'])
+def userData(userName, password, firstName = "", lastName = ""):
+	if request.method == 'GET':
+		credentials = SID.userList.find({"userName": userName})
+		encrypted = credentials[0]['password']
+		if credentials.count() == 1 and (encrypted == bcrypt.hashpw(password.encode(), encrypted)):
+			now = datetime.now()
+			usey = userName
+			cur = AD.cursor()
+			cur.execute("INSERT INTO actions (userName, actionType, actionClassification, location, hour) VALUES (?, ?, ?, ?, ?)", (userName, 'login', 'loggedIn', 'location', now))
+			AD.commit()
+			user = {}
+			user['userName'] = credentials[0]['userName']
+			user['firstName'] = credentials[0]['firstName']
+			user['lastName'] = credentials[0]['lastName']
+			#user['profilePic'] = credentials[0]['ProfilePic']
+			user['languages'] = credentials[0]['Languages']
+			user['friends'] = credentials[0]['friends']
+			user['weeklyProgress'] = credentials[0]['weeklyProgress']
+			return jsonify(user)
+		else:
+			abort(404)
+	elif request.method == 'POST':
+		credentials = SID.userList.find({"userName": userName,})
+		if credentials.count() == 0 and not userName == "schema":
+			encrypted = bcrypt.hashpw(password.encode(), salt)
+			SID.userList.insert_one({'userName': userName, 'password': encrypted, "firstName": firstName, "lastName": lastName, "ProfilePic": None, "friends": [], "Languages": [], "weeklyProgress": 0})
+		else:
+			return "HTML 409"
+
+#Profile Pic
+#Simple API Call for profile pic retrieval
+@app.route('/profilePic/<userName>')
+def profilePic(userName):
+	credentials = SID.userList.find({"userName": userName})[0]
+	data = {}
+	data['profilePic'] = credentials['ProfilePic']
+	return jsonify(data)
+
+
+
+#Feed Element Data
+#Get: Obtains all feed elements for a user's feed
+#Post: Posts a new feed to the Post Database
+#Formatting
+#feedElements
+# ->userName: userName of each friend
+# ->posts
+# ->->userName: userName of the post
+# ->->text: the text displayed by the post
+# ->->likes: the likes a post has
+# ->->dislikes: the dislikes a post has
+# ->->idNum: the id number of a post
+#photos
+#->photo: returns the photo of the specified user
+@app.route('/feedElements/<userName>', methods = ['GET'])
+@app.route('/feedElements/<userName>/<inputText>', methods = ['POST'])
+def feedElements(userName, inputText = ""):
+	if request.method == 'POST':
+		data = SID.postList.find({'idNum': 0})
+		idNum = data[0]['totalNumber']
+		idNum += 1
+		inputText = inputText.replace("+", " ")
+		language = markovModel().getLikeliest(inputText)
+		likers = []
+		likers.append(userName)
+		newFeedElement = feedElement(userName, inputText, 0, 0, idNum, language, likers)
+		encodedElement = bson.BSON.encode(newFeedElement.__dict__)
+		SID.postList.insert_one({'userName': userName, 'idNum': idNum, 'post': encodedElement})
+		#Updating the post counter
+		postCounterID = data[0]['_id']
+		SID.postList.update_one({'_id': postCounterID},{'$set': {'totalNumber': idNum}}, upsert=False)
+		return "HTML 200"
+	elif request.method == 'GET':
+		credentials = SID.userList.find({"userName": userName})
+		posters = []
+		data = {}
+		data['feedElements'] = []
+		friendsList = credentials[0]['friends']
+		friendsList.append(userName)
+		i = 0
+		for friend in friendsList:
+			pile = SID.postList.find({"userName": friend})
+			data['feedElements'].append({  
+				'userName': friend,
+				'posts': []
+				})
+			if not friend in posters:
+				posters.append(friend)
+				credentials = SID.userList.find({"userName": friend})
+				data[friend] = credentials[0]["ProfilePic"]
+			for feedElemen in pile:
+				decoded = feedElemen['post']
+				decoded = bson.BSON.decode(decoded)
+				data['feedElements'][i]['posts'].append(decoded)
+			i += 1
+		return jsonify(data)
+
+#Like a Feed Element
+#Simple interaction with the Database Method
+#Adds or Removes a like from the specified post.
+#Updates it in the Database
+@app.route('/feedElementLike/<userName>/<postID>', methods = ['PUT'])
+def feedElementLike(userName, postID):
+	postStack = SID.postList.find({'idNum': int(postID)})
+	decoded = postStack[0]['post']
+	decoded = bson.BSON.decode(decoded)
+	if not userName in decoded['likers']:
+		print(int(decoded['likes']) + 1)
+		decoded['likers'].append(userName)
+		newPost = feedElement(decoded['userName'], decoded['text'], int(decoded['likes']) + 1, decoded['dislikes'], postID, decoded['language'], decoded['likers'])
+	else:
+		decoded['likers'].remove(userName)
+		newPost = feedElement(decoded['userName'], decoded['text'], int(decoded['likes']) - 1, decoded['dislikes'], postID, decoded['language'], decoded['likers'])
+	toUpdateID = postStack[0]['_id']
+	newPost = bson.BSON.encode(newPost.__dict__)
+	SID.postList.update_one({'_id':toUpdateID}, {'$set': {'post': newPost}}, upsert=False )
+	return 'HTML 200'
+
+#Friend Request Data
+#Get: Obtains all friend Request Datas for a specific user
+#Post: Sends a Friend Request, uploading it to the SID
+#Delete: Accepts or Rejects a Friend Request, deleting it from the SID
+#Formatting
+#requests
+#->userName: requester's userName
+#->firstName: requester's given name
+#->lastName: requester's surname
+#->profilePic: requester's profile picture in a string base64
+#->languages: an array of languages the requester is interested in/knows/learning
+#->friends: an array of the requester's friends
+@app.route('/friendRequest/<accepter>/<requester>/<accepted>', methods = ['DELETE'])
+@app.route('/friendRequest/<accepter>/<requester>', methods = ['POST'])
+@app.route('/friendRequest/<accepter>', methods = ['GET'])
+def friendRequests(accepter, requester = '', accepted = 'False'):
+	if request.method == 'POST':
+		friendRequests = SID.friendRequests
+		friendRequests.insert_one({'requester': requester, 'accepter': accepter})
+		notifications(accepter, requester, "@" + requester + " has sent you a friend request!")
+		return 'HTML 200'
+	elif request.method == 'DELETE':
+		if accepted == 'False':
+			friendRequests = SID.friendRequests
+			friendRequests.delete_one({'requester': requester, 'accepter': accepter})
+			return 'HTML 200'
+		elif accepted == 'True':
+			requesterData = SID.userList.find({"userName": requester})
+			accepterData = SID.userList.find({"userName": accepter})
+			requesterFriends = requesterData[0]['friends']
+			accepterFriends = accepterData[0]['friends']
+			requesterFriends.append(accepter)
+			accepterFriends.append(requester)
+			requesterID = requesterData[0]['_id']
+			accepterID = accepterData[0]['_id']
+			SID.userList.update_one({'_id': requesterID},{'$set': {'friends': requesterFriends}}, upsert=False)
+			SID.userList.update_one({'_id':accepterID}, {'$set': {'friends': accepterFriends}}, upsert=False )
+			friendRequests = SID.friendRequests
+			friendRequests.delete_one({'requester': requester, 'accepter': accepter})
+			notifications(requester, accepter, "You are now friends with" + accepter + "!")
+			notifications(accepter, requester, "You are now friends with" + requester + "!")
+			return 'HTML 200'
+	elif request.method == 'GET':
+		friendRequests = SID.friendRequests
+		requestList = friendRequests.find({'accepter': accepter})
+		data = {}
+		data['requests'] = []
+		for x in range(requestList.count()):
+			requester = SID.userList.find({"userName": requestList[x]['requester']})
+			data['requests'].append({
+				'userName': requester[0]['userName'],
+				'firstName': requester[0]['firstName'],
+				'lastName': requester[0]['lastName'],
+				'profilePic': requester[0]['ProfilePic'],
+				'languages': requester[0]['Languages'],
+				'friends': requester[0]['friends']
+				})
+		return jsonify(data)
+
+
+#LanguageProgress
+#Obtains User's Data
+#If there is no record of the language, one is added
+#PUT updates status of a user
+@app.route('/languageProgress/<userName>/<language>/<checkP>', methods = ['PUT'])
+@app.route('/languageProgress/<userName>/<language>', methods = ['GET'])
+def languageProgress(userName, language, checkP = ""):
+	if request.method == 'GET':
+		data = {}
+		data['checkPoints'] = []
+		schema = SID.langProg.find({"userName": "schema", "language": language})[0]
+		cps = schema['cpCount']
+		stack = SID.langProg.find({"userName": userName, "language": language})
+		if stack.count() == 0:
+			SID.langProg.insert_one({"userName": userName, "language": language})
+			idNum = SID.langProg.find({"userName": userName, "language": language})[0]['_id']
+			for x in range(cps):
+				line = "cp" + str(x + 1)
+				SID.langProg.update_one({"_id": idNum}, {"$set": {line: False}})
+			stack = SID.langProg.find({"userName": userName, "language": language})[0]
+			credentials = SID.userList.find({"userName": userName})[0]
+			languages = credentials['Languages']
+			languages.append(language)
+			toUpdateID = credentials['_id']
+			SID.userList.update_one({'_id': toUpdateID},{'$set': {'Languages': languages}}, upsert=False)
+		else:
+			stack = stack[0]
+		for x in range(cps):
+			line = "cp" + str(x + 1)
+			status = stack[line]
+			data['checkPoints'].append({
+				"status": status,
+				"cp" : line,
+				line: schema[line]
+				})
+		return jsonify(data)
+	elif request.method == 'PUT':
+		stack = SID.langProg.find({"userName": userName, "language": language})[0]
+		toUpdateID = stack['_id']
+		schema = SID.langProg.find({"userName": "schema", "language": language})[0]
+		cps = schema['cpCount']
+		for x in range(cps):
+			line = 'cp' + str(x + 1)
+			if schema[line] == checkP:
+				checkP = line
+				break
+		SID.langProg.update_one({'_id': toUpdateID},{'$set': {checkP: True}}, upsert=False)
+		return "HTML 200"
+
+#Internal Update of Language Progress
+def languageProgressUpdate(userName, language, checkP = ""):
+	stack = SID.langProg.find({"userName": userName, "language": language})[0]
+	toUpdateID = stack['_id']
+	schema = SID.langProg.find({"userName": "schema", "language": language})[0]
+	cps = schema['cpCount']
+	for x in range(cps):
+		line = 'cp' + str(x + 1)
+		if schema[line] == checkP:
+			checkP = line
+			break
+	SID.langProg.update_one({'_id': toUpdateID},{'$set': {checkP: True}}, upsert=False)
+	updateWeeklyProgress(userName, 100)
+	return "HTML 200"
+
+#Exam Portion of the API
+@app.route('/exam/<userName>/<language>/<topic>/<idNum>/<answer>', methods = ['PUT'])
+@app.route('/exam/<userName>/<language>/<topic>', methods = ['GET'])
+def exam(userName, language, topic, idNum = "", answer = ""):
+	if request.method == 'GET':
+		#Return ten questions, with their answers randomized
+		cur2 = examAnswers.cursor()
+		cur2.execute("DELETE FROM answersDB WHERE userName = ?", (userName,))
+		category = "" + language + topic
+		cur = questions.cursor()
+		cur.execute("SELECT * FROM questionDB WHERE topic =?", (category,))
+		rows = cur.fetchall()
+		data = {}
+		data['questions'] = []
+		for row in rows:
+			rA = row[3]
+			answers = []
+			answers.append(rA)
+			answers.append(row[4])
+			answers.append(row[5])
+			answers.append(row[6])
+			shuffle(answers)
+			data['questions'].append({
+				'qText': row[2],
+				'a': answers[0],
+				'b': answers[1],
+				'c': answers[2],
+				'd': answers[3],
+				'id': row[0]
+				})
+			cur2.execute("INSERT INTO answersDB (questionID, userName, rA) VALUES (?, ?, ?)", (row[0] , userName, rA))
+		cur2.execute("INSERT INTO answersDB (questionID, userName, rA) VALUES (?, ?, ?)", ('record' , userName, '0'))
+		examAnswers.commit()
+		return jsonify(data)
+	elif request.method == 'PUT':
+		data = {}
+		data['result'] = []
+		data['updated'] = False
+		answer.replace('+', ' ')
+		cur = examAnswers.cursor()
+		cur.execute('SELECT rA FROM answersDB WHERE questionID=? AND userName=?', (idNum, userName))
+		rows = cur.fetchall()
+		for row in rows:
+			if answer == row[0]:
+				data['result'].append(True)
+				updateWeeklyProgress(userName, 10)
+				cur.execute("SELECT rA FROM answersDB WHERE questionID = 'record' AND userName = ?", (userName,))
+				rows2 = cur.fetchall()
+				x = int(rows2[0][0]) + 1
+				if x == 7:
+					languageProgressUpdate(userName, language, topic)
+					data['updated'] = True
+				cur.execute("UPDATE answersDB SET rA = ? WHERE questionID = 'record' AND userName = ?", (x,userName))
+				cur.execute("DELETE FROM answersDB WHERE userName = ? AND questionID = ?", (userName,idNum))
+				examAnswers.commit()
+			else:
+				data['result'].append(False)
+				cur.execute("DELETE FROM answersDB WHERE userName = ? AND questionID = ?", (userName,idNum))
+				examAnswers.commit()
+		return jsonify(data)
+
+
+
+
+#Notifications Data
+#Get: Obtains all notifications to a user
+#Post: Sends a Notification to the SID
+#Formatting
+#notifications
+# -> sender: who the notification comes from
+# -> to: the user's name, reiterated
+# -> message: content of the notification
+@app.route('/notifications/<to>', methods = ['GET'])
+@app.route('/notifications/<to>/<sender>/<message>', methods = ['POST'])
+def notifications(to, sender = '', message = ''):
+	if request.method == 'POST':
+		SID.notifications.insert_one({'sender': sender, 'to': to, 'message': message})
+	elif request.method == 'GET':
+		data = {}
+		data['notifications'] = []
+		notificationPile = SID.notifications.find({'to': to})
+		for x in range(notificationPile.count()):
+			data['notifications'].append({
+				'sender': notificationPile[x]['sender'],
+				'to': notificationPile[x]['to'],
+				'message': notificationPile[x]['message']
+				})
+		return jsonify(data)
+
+#Friends Data
+#Get: obtains data for all friends to be displayed
+#Implement Machine Learning Recommendation later
+#Simple return for right now
+#Formatting:
+#recommended
+# userName -> a user's chosen username
+# firstName -> a user's given name
+# lastName -> a user's surname
+# profilePic -> a user's profile picture in a string base64
+#languages -> an array of languages a user is interested in/knows/learning
+#friends -> an array of that user's friends
+@app.route('/friends/<userName>', methods = ['GET'])
+def friends(userName):
+	userData = SID.userList.find({"userName": userName})[0]
+	data = {}
+	data['recommended'] = []
+	data['friends'] = []
+	similarData = SID.userList.find().limit(10)
+	for x in range(similarData.count()):
+		if similarData[x]['userName'] == userName:
+			continue
+		else:
+			data['recommended'].append({
+				'userName': similarData[x]['userName'],
+				'firstName': similarData[x]['firstName'],
+				'ProfilePic': similarData[x]['ProfilePic'],
+				'languages': similarData[x]['Languages'],
+				'friends': similarData[x]['friends']
+				})
+	for friend in userData['friends']:
+		friendData = SID.userList.find({"userName": friend})[0]
+		data['friends'].append({
+			'userName': friendData['userName'],
+			'ProfilePic': friendData['ProfilePic']
+			})
+	return jsonify(data)
+
+#Competition
+@app.route('/competition/<userName>')
+def competition(userName):
+	userData = SID.userList.find({"userName": userName})[0]
+	friends = userData['friends']
+	progressCount = {}
+	for friend in friends:
+		friendData = SID.userList.find({"userName": friend})[0]
+		progressCount[friend] = friendData['weeklyProgress']
+	statistics = {}
+	statistics['winners'] = []
+	x = 5
+	while x > 0 and len(progressCount) > 0:
+		toAdd = max(progressCount, key=(lambda key: progressCount[key]))
+		toAddAmount = progressCount.pop(toAdd)
+		statistics['winners'].append({
+			'userName': toAdd,
+			'amount': toAddAmount
+			})
+	return jsonify(statistics)
+
+#update weekly progress of a user
+def updateWeeklyProgress(userName, amount):
+	userData = SID.userList.find({"userName": userName})[0]
+	toUpdateID = userData['_id']
+	weeklyProgress = userData['weeklyProgress']
+	newWeeklyProgress = weeklyProgress + amount
+	SID.userList.update_one({'_id': toUpdateID},{'$set': {'weeklyProgress': newWeeklyProgress}}, upsert=False)
+	return 0
+
+
+
+
+
+if __name__ == '__main__':
+	app.debug = True
+	app.run(host='0.0.0.0', port=3000)
+
+
+
