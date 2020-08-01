@@ -20,6 +20,7 @@ import bcrypt
 from random import shuffle
 from pymongo import MongoClient
 import json
+from bson.objectid import ObjectId
 
 #App Set Up
 app = Flask(__name__)
@@ -28,18 +29,14 @@ app = Flask(__name__)
 salt = bcrypt.gensalt()
 
 #Database Setup
-#SID
-#
-#TODO: Remove my_mongodb_password = 'REMOVED FOR SECURITY REASONS'
+#polyglot_db
 client = MongoClient()
-#TODO: Remove client = pymongo.MongoClient("mongodb+srv://SLeoneSoftware:" + my_mongodb_password + "@polyglotparrotcluster-6nojv.gcp.mongodb.net/test?retryWrites=true&w=majority")
 polyglot_db = client.polyglot_db
-#AD
+#analytics_db
 DEFAULT_PATH = os.path.join(os.path.dirname(__file__), 'ad.sqlite3')
-AD = sqlite3.connect(DEFAULT_PATH) 
-#TODO: Insert this back in AD = sqlite3.connect('ad.sqlite3', check_same_thread=False) 
+analytics_db = sqlite3.connect(DEFAULT_PATH)
 
-#Managing API Requests
+#Controller
 
 #User Data
 #Get: Returns a JSON File containing the user's information
@@ -49,9 +46,12 @@ AD = sqlite3.connect(DEFAULT_PATH)
 # firstName -> user's given name
 # lastName -> user's surname
 # profilePic -> user's profile picture in a string base64
-#languages -> an array of languages the user is interested in/knows/learning
-@app.route('/api/user', methods = ['POST'])
+# languages -> list of user's languages
+# friends -> list of id's of user's friends
+#TODO: add Token to ensure only authenticated sources are posting
 @app.route('/api/user/<username>/<password>', methods = ['GET'])
+@app.route('/api/user', methods = ['POST'])
+@app.route('/api/user', methods = ['PUT'])
 def user(username = None, password = None):
 	if request.method == 'GET':
 		credentials = polyglot_db.users.find({"username": username})
@@ -60,14 +60,7 @@ def user(username = None, password = None):
 		encrypted = credentials[0]['password']
 		print(credentials)
 		if (encrypted == bcrypt.hashpw(password.encode(), encrypted)):
-			#TODO: Put this back in: 
-			"""
-			now = datetime.now()
-			usey = userName
-			cur = AD.cursor()
-			cur.execute("INSERT INTO actions (userName, actionType, actionClassification, location, hour) VALUES (?, ?, ?, ?, ?)", (userName, 'login', 'loggedIn', 'location', now))
-			AD.commit()
-			"""
+			#TODO: Record user logged into app in the Analytics Database
 			user = jsonify(str(credentials[0]))
 			return user
 		else:
@@ -83,6 +76,15 @@ def user(username = None, password = None):
 			return jsonify(str(polyglot_db.users.find({"username": username})[0]))
 		else:
 			return 'bad request: username taken', 400
+	elif request.method == 'PUT':
+		user_id = ObjectId(request.json['_id'])
+		credentials = polyglot_db.users.find({"_id": user_id})
+		if credentials.count() == 1:
+			#updates all fields allowed to be updated without extra steps
+			polyglot_db.users.update({'_id':user_id},{"$set":{ "firstName": request.json['firstName'], "lastName": request.json['lastName'], "profilePic": request.json['profilePic'], "weeklyProgress": request.json['weeklyProgress'] } },upsert=False)#({ "_id": user_id },{$set: { "firstName": request.json['firstName'], "lastName": request.json['lastName'], "profilePic": request.json['profilePic'], "weeklyProgress": request.json['weeklyProgress'] }})
+			return jsonify(str(polyglot_db.users.find({"_id": user_id})[0]))
+		else:
+			return 'bad request: user not found', 400
 """
 #Profile Pic
 #Simple API Call for profile pic retrieval
