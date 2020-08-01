@@ -50,14 +50,16 @@ polyglot_db = client.polyglot_db
 # profilePic -> user's profile picture in a string base64
 #languages -> an array of languages the user is interested in/knows/learning
 #TODO: Remove friends -> an array of the user's friends
-@app.route('/api/user/<username>/<password>/<firstName>/<lastName>', methods = ['POST'])
+@app.route('/api/user/<username>', methods = ['POST'])
 @app.route('/api/user/<username>/<password>', methods = ['GET'])
-def user(username, password, firstName = "John", lastName = "Doe"):
+def user(username, password = None):
 	if request.method == 'GET':
 		credentials = polyglot_db.users.find({"username": username})
+		if (not credentials.count() == 1):
+			return 'bad request: single username "' + username + '" not found', 400
 		encrypted = credentials[0]['password']
 		print(credentials)
-		if credentials.count() == 1: #TODO: put this back in: and (encrypted == bcrypt.hashpw(password.encode(), encrypted)):
+		if credentials.count() == 1: #TODO: change it to only this back in: and (encrypted == bcrypt.hashpw(password.encode(), encrypted)):
 			#TODO: Put this back in: 
 			"""
 			now = datetime.now()
@@ -66,17 +68,19 @@ def user(username, password, firstName = "John", lastName = "Doe"):
 			cur.execute("INSERT INTO actions (userName, actionType, actionClassification, location, hour) VALUES (?, ?, ?, ?, ?)", (userName, 'login', 'loggedIn', 'location', now))
 			AD.commit()
 			"""
-			user = str(credentials[0])
-			return jsonify(user)
+			user = jsonify(str(credentials[0]))
+			return user
 		else:
-			abort(400)
+			return 'bad request: authentication failed', 400
 	elif request.method == 'POST':
-		credentials = SID.userList.find({"userName": userName,})
+		credentials = polyglot_db.users.find({"username": username})
 		if credentials.count() == 0:
-			encrypted = bcrypt.hashpw(password.encode(), salt)
-			SID.userList.insert({'userName': userName, 'password': encrypted, "firstName": firstName, "lastName": lastName, "ProfilePic": None, "friends": [], "Languages": [], "weeklyProgress": 0})
+			#encrypted = bcrypt.hashpw(password.encode(), salt)
+			return request.json
+			#polyglot_db.users.insert()
+			#SID.userList.insert({'userName': userName, 'password': encrypted, "firstName": firstName, "lastName": lastName, "ProfilePic": None, "friends": [], "Languages": [], "weeklyProgress": 0})
 		else:
-			return "HTML 409"
+			return 'bad request: username taken', 400
 """
 #Profile Pic
 #Simple API Call for profile pic retrieval
