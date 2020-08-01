@@ -19,6 +19,7 @@ from markovModel import markovModel
 import bcrypt
 from random import shuffle
 from pymongo import MongoClient
+import json
 
 #App Set Up
 app = Flask(__name__)
@@ -34,8 +35,8 @@ client = MongoClient()
 #TODO: Remove client = pymongo.MongoClient("mongodb+srv://SLeoneSoftware:" + my_mongodb_password + "@polyglotparrotcluster-6nojv.gcp.mongodb.net/test?retryWrites=true&w=majority")
 polyglot_db = client.polyglot_db
 #AD
-#DEFAULT_PATH = os.path.join(os.path.dirname(__file__), 'ad.sqlite3')
-#AD = sqlite3.connect(DEFAULT_PATH) 
+DEFAULT_PATH = os.path.join(os.path.dirname(__file__), 'ad.sqlite3')
+AD = sqlite3.connect(DEFAULT_PATH) 
 #TODO: Insert this back in AD = sqlite3.connect('ad.sqlite3', check_same_thread=False) 
 
 #Managing API Requests
@@ -49,17 +50,16 @@ polyglot_db = client.polyglot_db
 # lastName -> user's surname
 # profilePic -> user's profile picture in a string base64
 #languages -> an array of languages the user is interested in/knows/learning
-#TODO: Remove friends -> an array of the user's friends
-@app.route('/api/user/<username>', methods = ['POST'])
+@app.route('/api/user', methods = ['POST'])
 @app.route('/api/user/<username>/<password>', methods = ['GET'])
-def user(username, password = None):
+def user(username = None, password = None):
 	if request.method == 'GET':
 		credentials = polyglot_db.users.find({"username": username})
 		if (not credentials.count() == 1):
 			return 'bad request: single username "' + username + '" not found', 400
 		encrypted = credentials[0]['password']
 		print(credentials)
-		if credentials.count() == 1: #TODO: change it to only this back in: and (encrypted == bcrypt.hashpw(password.encode(), encrypted)):
+		if (encrypted == bcrypt.hashpw(password.encode(), encrypted)):
 			#TODO: Put this back in: 
 			"""
 			now = datetime.now()
@@ -73,12 +73,14 @@ def user(username, password = None):
 		else:
 			return 'bad request: authentication failed', 400
 	elif request.method == 'POST':
+		username = request.json['username']
+		password = request.json['password']
 		credentials = polyglot_db.users.find({"username": username})
 		if credentials.count() == 0:
-			#encrypted = bcrypt.hashpw(password.encode(), salt)
-			return request.json
-			#polyglot_db.users.insert()
-			#SID.userList.insert({'userName': userName, 'password': encrypted, "firstName": firstName, "lastName": lastName, "ProfilePic": None, "friends": [], "Languages": [], "weeklyProgress": 0})
+			encrypted = bcrypt.hashpw(password.encode(), salt)
+			request.json['password'] = encrypted
+			polyglot_db.users.insert(request.json)
+			return jsonify(str(polyglot_db.users.find({"username": username})[0]))
 		else:
 			return 'bad request: username taken', 400
 """
