@@ -1,8 +1,8 @@
 #API For Polyglot Parrot Server Side
 
 #Acronyms
-#SID = Seen (Displayed) Information Database
-#AD = Analytics Database
+#SID = user_db now -> Implemented w/ MongoDB
+#AD = Analytics Database -> Implemented w/ SQLite3
 
 #Import statements
 from flask import Flask, jsonify, request, redirect, url_for, abort
@@ -18,6 +18,7 @@ from datetime import datetime
 from markovModel import markovModel
 import bcrypt
 from random import shuffle
+from pymongo import MongoClient
 
 #App Set Up
 app = Flask(__name__)
@@ -28,33 +29,14 @@ salt = bcrypt.gensalt()
 #Database Setup
 #SID
 #
-my_mongodb_password = 'REMOVED FOR SECURITY REASONS'
-client = pymongo.MongoClient("mongodb+srv://SLeoneSoftware:" + my_mongodb_password + "@polyglotparrotcluster-6nojv.gcp.mongodb.net/test?retryWrites=true&w=majority")
-SID = client.test
+#TODO: Remove my_mongodb_password = 'REMOVED FOR SECURITY REASONS'
+client = MongoClient()
+#TODO: Remove client = pymongo.MongoClient("mongodb+srv://SLeoneSoftware:" + my_mongodb_password + "@polyglotparrotcluster-6nojv.gcp.mongodb.net/test?retryWrites=true&w=majority")
+polyglot_db = client.polyglot_db
 #AD
 #DEFAULT_PATH = os.path.join(os.path.dirname(__file__), 'ad.sqlite3')
 #AD = sqlite3.connect(DEFAULT_PATH) 
-AD = sqlite3.connect('ad.sqlite3', check_same_thread=False) 
-
-#Question Database and ExamAnswers Database
-questions = sqlite3.connect('questions.sqlite3', check_same_thread=False) 
-examAnswers = sqlite3.connect('examAnswers.sqlite3', check_same_thread=False)
-
-#Resetting Weekly Progress
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
+#TODO: Insert this back in AD = sqlite3.connect('ad.sqlite3', check_same_thread=False) 
 
 #Managing API Requests
 
@@ -67,38 +49,35 @@ examAnswers = sqlite3.connect('examAnswers.sqlite3', check_same_thread=False)
 # lastName -> user's surname
 # profilePic -> user's profile picture in a string base64
 #languages -> an array of languages the user is interested in/knows/learning
-#friends -> an array of the user's friends
-@app.route('/api/user/<userName>/<password>/<firstName>/<lastName>', methods = ['POST'])
-@app.route('/api/user/<userName>/<password>', methods = ['GET'])
-def user(userName, password, firstName = "", lastName = ""):
+#TODO: Remove friends -> an array of the user's friends
+@app.route('/api/user/<username>/<password>/<firstName>/<lastName>', methods = ['POST'])
+@app.route('/api/user/<username>/<password>', methods = ['GET'])
+def user(username, password, firstName = "John", lastName = "Doe"):
 	if request.method == 'GET':
-		credentials = SID.userList.find({"userName": userName})
+		credentials = polyglot_db.users.find({"username": username})
 		encrypted = credentials[0]['password']
-		if credentials.count() == 1 and (encrypted == bcrypt.hashpw(password.encode(), encrypted)):
+		print(credentials)
+		if credentials.count() == 1: #TODO: put this back in: and (encrypted == bcrypt.hashpw(password.encode(), encrypted)):
+			#TODO: Put this back in: 
+			"""
 			now = datetime.now()
 			usey = userName
 			cur = AD.cursor()
 			cur.execute("INSERT INTO actions (userName, actionType, actionClassification, location, hour) VALUES (?, ?, ?, ?, ?)", (userName, 'login', 'loggedIn', 'location', now))
 			AD.commit()
-			user = {}
-			user['userName'] = credentials[0]['userName']
-			user['firstName'] = credentials[0]['firstName']
-			user['lastName'] = credentials[0]['lastName']
-			#user['profilePic'] = credentials[0]['ProfilePic']
-			user['languages'] = credentials[0]['Languages']
-			user['friends'] = credentials[0]['friends']
-			user['weeklyProgress'] = credentials[0]['weeklyProgress']
+			"""
+			user = str(credentials[0])
 			return jsonify(user)
 		else:
-			abort(404)
+			abort(400)
 	elif request.method == 'POST':
 		credentials = SID.userList.find({"userName": userName,})
-		if credentials.count() == 0 and not userName == "schema":
+		if credentials.count() == 0:
 			encrypted = bcrypt.hashpw(password.encode(), salt)
-			SID.userList.insert_one({'userName': userName, 'password': encrypted, "firstName": firstName, "lastName": lastName, "ProfilePic": None, "friends": [], "Languages": [], "weeklyProgress": 0})
+			SID.userList.insert({'userName': userName, 'password': encrypted, "firstName": firstName, "lastName": lastName, "ProfilePic": None, "friends": [], "Languages": [], "weeklyProgress": 0})
 		else:
 			return "HTML 409"
-
+"""
 #Profile Pic
 #Simple API Call for profile pic retrieval
 @app.route('/profilePic/<userName>')
@@ -471,7 +450,7 @@ def updateWeeklyProgress(userName, amount):
 	SID.userList.update_one({'_id': toUpdateID},{'$set': {'weeklyProgress': newWeeklyProgress}}, upsert=False)
 	return 0
 
-
+"""
 
 
 
