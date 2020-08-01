@@ -68,9 +68,9 @@ examAnswers = sqlite3.connect('examAnswers.sqlite3', check_same_thread=False)
 # profilePic -> user's profile picture in a string base64
 #languages -> an array of languages the user is interested in/knows/learning
 #friends -> an array of the user's friends
-@app.route('/userData/<userName>/<password>/<firstName>/<lastName>', methods = ['POST'])
-@app.route('/userData/<userName>/<password>', methods = ['GET'])
-def userData(userName, password, firstName = "", lastName = ""):
+@app.route('/api/user/<userName>/<password>/<firstName>/<lastName>', methods = ['POST'])
+@app.route('/api/user/<userName>/<password>', methods = ['GET'])
+def user(userName, password, firstName = "", lastName = ""):
 	if request.method == 'GET':
 		credentials = SID.userList.find({"userName": userName})
 		encrypted = credentials[0]['password']
@@ -124,8 +124,8 @@ def profilePic(userName):
 # ->->idNum: the id number of a post
 #photos
 #->photo: returns the photo of the specified user
-@app.route('/feedElements/<userName>', methods = ['GET'])
-@app.route('/feedElements/<userName>/<inputText>', methods = ['POST'])
+@app.route('/api/feedElements/<userName>', methods = ['GET'])
+@app.route('/api/feedElements/<userName>/<inputText>', methods = ['POST'])
 def feedElements(userName, inputText = ""):
 	if request.method == 'POST':
 		data = SID.postList.find({'idNum': 0})
@@ -167,12 +167,14 @@ def feedElements(userName, inputText = ""):
 			i += 1
 		return jsonify(data)
 
+
+#TODO: Combine this with method above it
 #Like a Feed Element
 #Simple interaction with the Database Method
 #Adds or Removes a like from the specified post.
 #Updates it in the Database
-@app.route('/feedElementLike/<userName>/<postID>', methods = ['PUT'])
-def feedElementLike(userName, postID):
+@app.route('/api/feedElement/<userName>/<postID>', methods = ['PUT'])
+def feedElement(userName, postID):
 	postStack = SID.postList.find({'idNum': int(postID)})
 	decoded = postStack[0]['post']
 	decoded = bson.BSON.decode(decoded)
@@ -200,9 +202,9 @@ def feedElementLike(userName, postID):
 #->profilePic: requester's profile picture in a string base64
 #->languages: an array of languages the requester is interested in/knows/learning
 #->friends: an array of the requester's friends
-@app.route('/friendRequest/<accepter>/<requester>/<accepted>', methods = ['DELETE'])
-@app.route('/friendRequest/<accepter>/<requester>', methods = ['POST'])
-@app.route('/friendRequest/<accepter>', methods = ['GET'])
+@app.route('/api/friendRequest/<accepter>/<requester>/<accepted>', methods = ['DELETE'])
+@app.route('/api/friendRequest/<accepter>/<requester>', methods = ['POST'])
+@app.route('/api/friendRequest/<accepter>', methods = ['GET'])
 def friendRequests(accepter, requester = '', accepted = 'False'):
 	if request.method == 'POST':
 		friendRequests = SID.friendRequests
@@ -247,7 +249,7 @@ def friendRequests(accepter, requester = '', accepted = 'False'):
 				})
 		return jsonify(data)
 
-
+#TODO: Rename to follow convention
 #LanguageProgress
 #Obtains User's Data
 #If there is no record of the language, one is added
@@ -313,8 +315,8 @@ def languageProgressUpdate(userName, language, checkP = ""):
 	return "HTML 200"
 
 #Exam Portion of the API
-@app.route('/exam/<userName>/<language>/<topic>/<idNum>/<answer>', methods = ['PUT'])
-@app.route('/exam/<userName>/<language>/<topic>', methods = ['GET'])
+@app.route('/api/exam/<userName>/<language>/<topic>/<idNum>/<answer>', methods = ['PUT'])
+@app.route('/api/exam/<userName>/<language>/<topic>', methods = ['GET'])
 def exam(userName, language, topic, idNum = "", answer = ""):
 	if request.method == 'GET':
 		#Return ten questions, with their answers randomized
@@ -384,8 +386,8 @@ def exam(userName, language, topic, idNum = "", answer = ""):
 # -> sender: who the notification comes from
 # -> to: the user's name, reiterated
 # -> message: content of the notification
-@app.route('/notifications/<to>', methods = ['GET'])
-@app.route('/notifications/<to>/<sender>/<message>', methods = ['POST'])
+@app.route('/api/notifications/<to>', methods = ['GET'])
+@app.route('/api/notifications/<to>/<sender>/<message>', methods = ['POST'])
 def notifications(to, sender = '', message = ''):
 	if request.method == 'POST':
 		SID.notifications.insert_one({'sender': sender, 'to': to, 'message': message})
@@ -413,7 +415,7 @@ def notifications(to, sender = '', message = ''):
 # profilePic -> a user's profile picture in a string base64
 #languages -> an array of languages a user is interested in/knows/learning
 #friends -> an array of that user's friends
-@app.route('/friends/<userName>', methods = ['GET'])
+@app.route('/api/friends/<userName>', methods = ['GET'])
 def friends(userName):
 	userData = SID.userList.find({"userName": userName})[0]
 	data = {}
@@ -440,7 +442,7 @@ def friends(userName):
 	return jsonify(data)
 
 #Competition
-@app.route('/competition/<userName>')
+@app.route('/api/competition/<userName>')
 def competition(userName):
 	userData = SID.userList.find({"userName": userName})[0]
 	friends = userData['friends']
