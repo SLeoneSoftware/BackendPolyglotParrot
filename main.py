@@ -163,8 +163,8 @@ def friendrequest(accepter, requester = '', accepted = 'False'):
 			polyglot_db.friendRequests.remove(friend_request)
 			results = dict()
 			results["friends"] = accepter_friends
-			#notifications(requester, accepter, "You are now friends with" + accepter + "!")
-			#notifications(accepter, requester, "You are now friends with" + requester + "!")
+			notifications(requester, accepter, "You are now friends with" + accepter + "!")
+			notifications(accepter, requester, "You are now friends with" + requester + "!")
 			return jsonify(results), 200
 	elif request.method == 'GET':
 		friend_requests = polyglot_db.friendRequests
@@ -214,14 +214,14 @@ def friends(userName):
 				'friends': similarData[x]['friends']
 				})
 	for friend in user['friends']:
-		friend_data = SID.userList.find({"userName": friend})[0]
+		friend_data = polyglot_db.users.find({"username": friend})[0]
 		data['friends'].append({
 			'username': friend_data['username'],
 			'profilePic': friend_data['profilePic'],
 			'weeklyProgress': friend_data['weeklyProgress']
 			})
 	return jsonify(data)
-"""
+
 #Notifications Data
 #Get: Obtains all notifications to a user
 #Post: Sends a Notification to the SID
@@ -234,19 +234,21 @@ def friends(userName):
 @app.route('/api/notifications/<to>/<sender>/<message>', methods = ['POST'])
 def notifications(to, sender = '', message = ''):
 	if request.method == 'POST':
-		SID.notifications.insert_one({'sender': sender, 'to': to, 'message': message})
+		result = {'sender': sender, 'to': to, 'message': message}
+		polyglot_db.notifications.insert(result)
+		return jsonify(result)
 	elif request.method == 'GET':
 		data = {}
 		data['notifications'] = []
-		notificationPile = SID.notifications.find({'to': to})
-		for x in range(notificationPile.count()):
+		notification_pile = polyglot_db.notifications.find({'to': to})
+		for x in range(notification_pile.count()):
 			data['notifications'].append({
-				'sender': notificationPile[x]['sender'],
-				'to': notificationPile[x]['to'],
-				'message': notificationPile[x]['message']
+				'sender': notification_pile[x]['sender'],
+				'to': notification_pile[x]['to'],
+				'message': notification_pile[x]['message']
 				})
 		return jsonify(data)
-"""
+
 
 """
 
