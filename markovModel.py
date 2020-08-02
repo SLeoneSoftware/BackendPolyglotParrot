@@ -24,7 +24,7 @@ class markovModel:
 			else:
 				probability = probability * matrix[row][column]
 		return probability
-	def getLikeliest(self, text):
+	def get_likeliest(self, text):
 		languageMapper = {}
 		english = self.probability(text, self.englishStochasticMatrix)
 		languageMapper[english] = "english"

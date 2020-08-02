@@ -1,12 +1,11 @@
 from polyglot import polyglot
 
-class feedElement:
-	def __init__(self, userName, text, likes, dislikes, idNum, language, likers):
-		self.userName = userName
+class feed_element:
+	def __init__(self, _id, text, likes, dislikes, language, likers):
+		self._id = _id
 		self.text = text
 		self.likes = likes
 		self.dislikes = dislikes
-		self.idNum = idNum
 		self.language = language
 		self.likers = likers
 	def addLike(self):

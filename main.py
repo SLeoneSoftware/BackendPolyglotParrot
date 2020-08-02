@@ -8,7 +8,7 @@
 from flask import Flask, jsonify, request, redirect, url_for, abort
 from flask_restful import Resource
 from werkzeug.utils import secure_filename
-from feedElement import feedElement
+from feed_element import feed_element
 import os
 import bson
 import pymongo
@@ -85,21 +85,12 @@ def user(username = None, password = None):
 			return jsonify(str(polyglot_db.users.find({"_id": user_id})[0]))
 		else:
 			return 'bad request: user not found', 400
-"""
-#Profile Pic
-#Simple API Call for profile pic retrieval
-@app.route('/profilePic/<userName>')
-def profilePic(userName):
-	credentials = SID.userList.find({"userName": userName})[0]
-	data = {}
-	data['profilePic'] = credentials['ProfilePic']
-	return jsonify(data)
 
 
 
 #Feed Element Data
 #Get: Obtains all feed elements for a user's feed
-#Post: Posts a new feed to the Post Database
+#Post: Posts a new feed to the Post Database (returns list of elements)
 #Formatting
 #feedElements
 # ->userName: userName of each friend
@@ -111,25 +102,23 @@ def profilePic(userName):
 # ->->idNum: the id number of a post
 #photos
 #->photo: returns the photo of the specified user
-@app.route('/api/feedElements/<userName>', methods = ['GET'])
-@app.route('/api/feedElements/<userName>/<inputText>', methods = ['POST'])
-def feedElements(userName, inputText = ""):
+@app.route('/api/feedElements/<username>', methods = ['GET'])
+@app.route('/api/feedElements/<username>/<text>', methods = ['POST'])
+def feed_elements(username, text = None):
 	if request.method == 'POST':
-		data = SID.postList.find({'idNum': 0})
-		idNum = data[0]['totalNumber']
-		idNum += 1
-		inputText = inputText.replace("+", " ")
-		language = markovModel().getLikeliest(inputText)
-		likers = []
-		likers.append(userName)
-		newFeedElement = feedElement(userName, inputText, 0, 0, idNum, language, likers)
-		encodedElement = bson.BSON.encode(newFeedElement.__dict__)
-		SID.postList.insert_one({'userName': userName, 'idNum': idNum, 'post': encodedElement})
-		#Updating the post counter
-		postCounterID = data[0]['_id']
-		SID.postList.update_one({'_id': postCounterID},{'$set': {'totalNumber': idNum}}, upsert=False)
-		return "HTML 200"
+		text = text.replace("+", " ")
+		language = markovModel().get_likeliest(text)
+		new_feed_element = feed_element(username, text, 0, 0, language, [])
+		encoded_element = bson.BSON.encode(new_feed_element.__dict__)
+		polyglot_db.feed_elements.insert({'username': username,  'post': encoded_element})
+		result = dict()
+		result['feedElements'] = list(polyglot_db.feed_elements.find({'username': username}))
+		return str(result), 200
 	elif request.method == 'GET':
+		result = dict()
+		result['feedElements'] = list(polyglot_db.feed_elements.find({'username': username}))
+		return str(result), 200
+	"""
 		credentials = SID.userList.find({"userName": userName})
 		posters = []
 		data = {}
@@ -153,7 +142,8 @@ def feedElements(userName, inputText = ""):
 				data['feedElements'][i]['posts'].append(decoded)
 			i += 1
 		return jsonify(data)
-
+	"""
+"""
 
 #TODO: Combine this with method above it
 #Like a Feed Element
