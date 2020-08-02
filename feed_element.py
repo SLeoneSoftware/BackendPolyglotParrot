@@ -1,8 +1,7 @@
-from polyglot import polyglot
 
 class feed_element:
-	def __init__(self, _id, text, likes, dislikes, language, likers):
-		self._id = _id
+	def __init__(self, username, text, likes, dislikes, language, likers):
+		self.username = username
 		self.text = text
 		self.likes = likes
 		self.dislikes = dislikes

@@ -1,8 +1,4 @@
-#API For Polyglot Parrot Server Side
-
-#Acronyms
-#SID = user_db now -> Implemented w/ MongoDB
-#AD = Analytics Database -> Implemented w/ SQLite3
+#API For Polyglot Parrot
 
 #Import statements
 from flask import Flask, jsonify, request, redirect, url_for, abort
@@ -93,7 +89,7 @@ def user(username = None, password = None):
 #Post: Posts a new feed to the Post Database (returns list of elements)
 #Formatting
 #feedElements
-# ->userName: userName of each friend
+# ->username: userName of each friend
 # ->posts
 # ->->userName: userName of the post
 # ->->text: the text displayed by the post
@@ -102,79 +98,32 @@ def user(username = None, password = None):
 # ->->idNum: the id number of a post
 #photos
 #->photo: returns the photo of the specified user
-@app.route('/api/feedElements/<username>', methods = ['GET'])
+@app.route('/api/feedElements/<username>/<getFriends>', methods = ['GET'])
 @app.route('/api/feedElements/<username>/<text>', methods = ['POST'])
 @app.route('/api/feedElements/<_id>', methods = ['PUT'])
-def feed_elements(username = None, text = None, _id = None):
+def feed_elements(username = None, getFriends = False, text = None, _id = None):
 	if request.method == 'POST':
 		text = text.replace("+", " ")
 		language = markovModel().get_likeliest(text)
-		new_feed_element = feed_element(username, text, 0, 0, language, [])
-		encoded_element = bson.BSON.encode(new_feed_element.__dict__)
-		polyglot_db.feed_elements.insert({'username': username,  'post': encoded_element})
+		new_feed_element = {"username": username,  "text": text, "likes": 0, "dislikes": 0, "language": language, "likers": []}
+		polyglot_db.feed_elements.insert(new_feed_element)
 		result = dict()
 		result['feedElements'] = list(polyglot_db.feed_elements.find({'username': username}))
 		return str(result), 200
 	elif request.method == 'GET':
 		result = dict()
-		result['feedElements'] = list(polyglot_db.feed_elements.find({'username': username}))
+		result['feedElements'] = {}
+		result['feedElements'][username] = list(polyglot_db.feed_elements.find({'username': username}))
+		friends = polyglot_db.users.find({'username': username})[0]['friends']
+		if getFriends:
+			for friend in friends:
+				result['feedElements'][friend] = list(polyglot_db.feed_elements.find({'username': friend}))
 		return str(result), 200
 	elif request.method == 'PUT':
-		new_feed_element = feed_element(request.json['username'], request.json['text'], request.json['likes'], request.json['dislikes'], request.json['language'], request.json['likers'])
-		encoded_element = bson.BSON.encode(new_feed_element.__dict__)
-		result = { "username": request.json['username'], "post": encoded_elment }
-		polyglot_db.users.update({"_id": ObjectId(_id)},{"$set":result },upsert=False)
-		return jsonify(result)
-	"""
-		credentials = SID.userList.find({"userName": userName})
-		posters = []
-		data = {}
-		data['feedElements'] = []
-		friendsList = credentials[0]['friends']
-		friendsList.append(userName)
-		i = 0
-		for friend in friendsList:
-			pile = SID.postList.find({"userName": friend})
-			data['feedElements'].append({  
-				'userName': friend,
-				'posts': []
-				})
-			if not friend in posters:
-				posters.append(friend)
-				credentials = SID.userList.find({"userName": friend})
-				data[friend] = credentials[0]["ProfilePic"]
-			for feedElemen in pile:
-				decoded = feedElemen['post']
-				decoded = bson.BSON.decode(decoded)
-				data['feedElements'][i]['posts'].append(decoded)
-			i += 1
-		return jsonify(data)
-	"""
-
-"""
-#TODO: Combine this with method above it
-#Like a Feed Element
-#Simple interaction with the Database Method
-#Adds or Removes a like from the specified post.
-#Updates it in the Database
-#TODO: Change all of this to remove feedElement object, just returning it/ storing it as a JSON
-@app.route('/api/feedElement/<userName>/<postID>', methods = ['PUT'])
-def feedElement(userName, postID):
-	postStack = SID.postList.find({'idNum': int(postID)})
-	decoded = postStack[0]['post']
-	decoded = bson.BSON.decode(decoded)
-	if not userName in decoded['likers']:
-		print(int(decoded['likes']) + 1)
-		decoded['likers'].append(userName)
-		newPost = feedElement(decoded['userName'], decoded['text'], int(decoded['likes']) + 1, decoded['dislikes'], postID, decoded['language'], decoded['likers'])
-	else:
-		decoded['likers'].remove(userName)
-		newPost = feedElement(decoded['userName'], decoded['text'], int(decoded['likes']) - 1, decoded['dislikes'], postID, decoded['language'], decoded['likers'])
-	toUpdateID = postStack[0]['_id']
-	newPost = bson.BSON.encode(newPost.__dict__)
-	SID.postList.update_one({'_id':toUpdateID}, {'$set': {'post': newPost}}, upsert=False )
-	return 'HTML 200'
-"""
+		#requires a feed_element body
+		new_feed_element = {'username': request.json['username'], 'text': request.json['text'], 'likes': request.json['likes'], 'dislikes': request.json['dislikes'], 'language': request.json['language'],'likers': request.json['likers'] }
+		polyglot_db.users.update({"_id": ObjectId(_id)},{"$set":new_feed_element},upsert=False)
+		return jsonify(new_feed_element), 200
 
 #Friend Request Data
 #Get: Obtains all friend Request Datas for a specific user
@@ -217,25 +166,95 @@ def friendrequest(accepter, requester = '', accepted = 'False'):
 			#notifications(requester, accepter, "You are now friends with" + accepter + "!")
 			#notifications(accepter, requester, "You are now friends with" + requester + "!")
 			return jsonify(results), 200
-	"""
 	elif request.method == 'GET':
-		friendRequests = SID.friendRequests
-		requestList = friendRequests.find({'accepter': accepter})
+		friend_requests = polyglot_db.friendRequests
+		request_list = friend_requests.find({'accepter': accepter})
 		data = {}
 		data['requests'] = []
-		for x in range(requestList.count()):
-			requester = SID.userList.find({"userName": requestList[x]['requester']})
+		for x in range(request_list.count()):
+			requester = polyglot_db.users.find({"userName": requestList[x]['requester']})
 			data['requests'].append({
-				'userName': requester[0]['userName'],
-				'firstName': requester[0]['firstName'],
-				'lastName': requester[0]['lastName'],
-				'profilePic': requester[0]['ProfilePic'],
-				'languages': requester[0]['Languages'],
+				'username': requester[0]['username'],
+				'firstname': requester[0]['firstname'],
+				'lastname': requester[0]['lastname'],
+				'profilePic': requester[0]['profilePic'],
+				'languages': requester[0]['languages'],
 				'friends': requester[0]['friends']
 				})
 		return jsonify(data)
-	"""
+
+#Friends Data
+#Get: obtains data for all friends to be displayed
+#TODO: Use ML to get recommended in the future
+#Simple return for right now
+#Formatting:
+#recommended
+# userName -> a user's chosen username
+# firstName -> a user's given name
+# lastName -> a user's surname
+# profilePic -> a user's profile picture in a string base64
+#languages -> an array of languages a user is interested in/knows/learning
+#friends -> an array of that user's friends
+@app.route('/api/friends/<userName>', methods = ['GET'])
+def friends(userName):
+	user = polyglot_db.users.find({"username": username})[0]
+	result = {}
+	result['recommended'] = []
+	result['friends'] = []
+	similarData = polyglot_db.users.find().limit(10)
+	for x in range(similarData.count()):
+		if similarData[x]['username'] == username:
+			continue
+		else:
+			data['recommended'].append({
+				'username': similarData[x]['username'],
+				'firstName': similarData[x]['firstName'],
+				'profilePic': similarData[x]['profilePic'],
+				'languages': similarData[x]['languages'],
+				'friends': similarData[x]['friends']
+				})
+	for friend in user['friends']:
+		friend_data = SID.userList.find({"userName": friend})[0]
+		data['friends'].append({
+			'username': friend_data['username'],
+			'profilePic': friend_data['profilePic'],
+			'weeklyProgress': friend_data['weeklyProgress']
+			})
+	return jsonify(data)
 """
+#Notifications Data
+#Get: Obtains all notifications to a user
+#Post: Sends a Notification to the SID
+#Formatting
+#notifications
+# -> sender: who the notification comes from
+# -> to: the user's name, reiterated
+# -> message: content of the notification
+@app.route('/api/notifications/<to>', methods = ['GET'])
+@app.route('/api/notifications/<to>/<sender>/<message>', methods = ['POST'])
+def notifications(to, sender = '', message = ''):
+	if request.method == 'POST':
+		SID.notifications.insert_one({'sender': sender, 'to': to, 'message': message})
+	elif request.method == 'GET':
+		data = {}
+		data['notifications'] = []
+		notificationPile = SID.notifications.find({'to': to})
+		for x in range(notificationPile.count()):
+			data['notifications'].append({
+				'sender': notificationPile[x]['sender'],
+				'to': notificationPile[x]['to'],
+				'message': notificationPile[x]['message']
+				})
+		return jsonify(data)
+"""
+
+"""
+
+Note: Every Endpoint below this line is commented out. This is because it is all part of a language progression feature, which used bad practices w/ databases. 
+
+
+
+
 #TODO: Rename to follow convention
 #LanguageProgress
 #Obtains User's Data
@@ -362,103 +381,8 @@ def exam(userName, language, topic, idNum = "", answer = ""):
 				examAnswers.commit()
 		return jsonify(data)
 
-
-
-
-#Notifications Data
-#Get: Obtains all notifications to a user
-#Post: Sends a Notification to the SID
-#Formatting
-#notifications
-# -> sender: who the notification comes from
-# -> to: the user's name, reiterated
-# -> message: content of the notification
-@app.route('/api/notifications/<to>', methods = ['GET'])
-@app.route('/api/notifications/<to>/<sender>/<message>', methods = ['POST'])
-def notifications(to, sender = '', message = ''):
-	if request.method == 'POST':
-		SID.notifications.insert_one({'sender': sender, 'to': to, 'message': message})
-	elif request.method == 'GET':
-		data = {}
-		data['notifications'] = []
-		notificationPile = SID.notifications.find({'to': to})
-		for x in range(notificationPile.count()):
-			data['notifications'].append({
-				'sender': notificationPile[x]['sender'],
-				'to': notificationPile[x]['to'],
-				'message': notificationPile[x]['message']
-				})
-		return jsonify(data)
-
-#Friends Data
-#Get: obtains data for all friends to be displayed
-#Implement Machine Learning Recommendation later
-#Simple return for right now
-#Formatting:
-#recommended
-# userName -> a user's chosen username
-# firstName -> a user's given name
-# lastName -> a user's surname
-# profilePic -> a user's profile picture in a string base64
-#languages -> an array of languages a user is interested in/knows/learning
-#friends -> an array of that user's friends
-@app.route('/api/friends/<userName>', methods = ['GET'])
-def friends(userName):
-	userData = SID.userList.find({"userName": userName})[0]
-	data = {}
-	data['recommended'] = []
-	data['friends'] = []
-	similarData = SID.userList.find().limit(10)
-	for x in range(similarData.count()):
-		if similarData[x]['userName'] == userName:
-			continue
-		else:
-			data['recommended'].append({
-				'userName': similarData[x]['userName'],
-				'firstName': similarData[x]['firstName'],
-				'ProfilePic': similarData[x]['ProfilePic'],
-				'languages': similarData[x]['Languages'],
-				'friends': similarData[x]['friends']
-				})
-	for friend in userData['friends']:
-		friendData = SID.userList.find({"userName": friend})[0]
-		data['friends'].append({
-			'userName': friendData['userName'],
-			'ProfilePic': friendData['ProfilePic']
-			})
-	return jsonify(data)
-
-#Competition
-@app.route('/api/competition/<userName>')
-def competition(userName):
-	userData = SID.userList.find({"userName": userName})[0]
-	friends = userData['friends']
-	progressCount = {}
-	for friend in friends:
-		friendData = SID.userList.find({"userName": friend})[0]
-		progressCount[friend] = friendData['weeklyProgress']
-	statistics = {}
-	statistics['winners'] = []
-	x = 5
-	while x > 0 and len(progressCount) > 0:
-		toAdd = max(progressCount, key=(lambda key: progressCount[key]))
-		toAddAmount = progressCount.pop(toAdd)
-		statistics['winners'].append({
-			'userName': toAdd,
-			'amount': toAddAmount
-			})
-	return jsonify(statistics)
-
-#update weekly progress of a user
-def updateWeeklyProgress(userName, amount):
-	userData = SID.userList.find({"userName": userName})[0]
-	toUpdateID = userData['_id']
-	weeklyProgress = userData['weeklyProgress']
-	newWeeklyProgress = weeklyProgress + amount
-	SID.userList.update_one({'_id': toUpdateID},{'$set': {'weeklyProgress': newWeeklyProgress}}, upsert=False)
-	return 0
-
 """
+
 
 
 
