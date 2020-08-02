@@ -80,7 +80,7 @@ def user(username = None, password = None):
 		user_id = ObjectId(request.json['_id'])
 		credentials = polyglot_db.users.find({"_id": user_id})
 		if credentials.count() == 1:
-			#updates all fields allowed to be updated without extra steps
+			#updates only fields allowed to be updated
 			polyglot_db.users.update({'_id':user_id},{"$set":{ "firstName": request.json['firstName'], "lastName": request.json['lastName'], "profilePic": request.json['profilePic'], "weeklyProgress": request.json['weeklyProgress'] } },upsert=False)#({ "_id": user_id },{$set: { "firstName": request.json['firstName'], "lastName": request.json['lastName'], "profilePic": request.json['profilePic'], "weeklyProgress": request.json['weeklyProgress'] }})
 			return jsonify(str(polyglot_db.users.find({"_id": user_id})[0]))
 		else:
@@ -104,7 +104,8 @@ def user(username = None, password = None):
 #->photo: returns the photo of the specified user
 @app.route('/api/feedElements/<username>', methods = ['GET'])
 @app.route('/api/feedElements/<username>/<text>', methods = ['POST'])
-def feed_elements(username, text = None):
+@app.route('/api/feedElements/<_id>', methods = ['PUT'])
+def feed_elements(username = None, text = None, _id = None):
 	if request.method == 'POST':
 		text = text.replace("+", " ")
 		language = markovModel().get_likeliest(text)
@@ -118,6 +119,12 @@ def feed_elements(username, text = None):
 		result = dict()
 		result['feedElements'] = list(polyglot_db.feed_elements.find({'username': username}))
 		return str(result), 200
+	elif request.method == 'PUT':
+		new_feed_element = feed_element(request.json['username'], request.json['text'], request.json['likes'], request.json['dislikes'], request.json['language'], request.json['likers'])
+		encoded_element = bson.BSON.encode(new_feed_element.__dict__)
+		result = { "username": request.json['username'], "post": encoded_elment }
+		polyglot_db.users.update({"_id": ObjectId(_id)},{"$set":result },upsert=False)
+		return jsonify(result)
 	"""
 		credentials = SID.userList.find({"userName": userName})
 		posters = []
@@ -143,13 +150,14 @@ def feed_elements(username, text = None):
 			i += 1
 		return jsonify(data)
 	"""
-"""
 
+"""
 #TODO: Combine this with method above it
 #Like a Feed Element
 #Simple interaction with the Database Method
 #Adds or Removes a like from the specified post.
 #Updates it in the Database
+#TODO: Change all of this to remove feedElement object, just returning it/ storing it as a JSON
 @app.route('/api/feedElement/<userName>/<postID>', methods = ['PUT'])
 def feedElement(userName, postID):
 	postStack = SID.postList.find({'idNum': int(postID)})
@@ -166,6 +174,7 @@ def feedElement(userName, postID):
 	newPost = bson.BSON.encode(newPost.__dict__)
 	SID.postList.update_one({'_id':toUpdateID}, {'$set': {'post': newPost}}, upsert=False )
 	return 'HTML 200'
+"""
 
 #Friend Request Data
 #Get: Obtains all friend Request Datas for a specific user
@@ -179,36 +188,36 @@ def feedElement(userName, postID):
 #->profilePic: requester's profile picture in a string base64
 #->languages: an array of languages the requester is interested in/knows/learning
 #->friends: an array of the requester's friends
-@app.route('/api/friendRequest/<accepter>/<requester>/<accepted>', methods = ['DELETE'])
-@app.route('/api/friendRequest/<accepter>/<requester>', methods = ['POST'])
-@app.route('/api/friendRequest/<accepter>', methods = ['GET'])
-def friendRequests(accepter, requester = '', accepted = 'False'):
+@app.route('/api/friendrequest/<accepter>/<requester>/<accepted>', methods = ['DELETE'])
+@app.route('/api/friendrequest/<accepter>/<requester>', methods = ['POST'])
+@app.route('/api/friendrequest/<accepter>', methods = ['GET'])
+def friendrequest(accepter, requester = '', accepted = 'False'):
 	if request.method == 'POST':
-		friendRequests = SID.friendRequests
-		friendRequests.insert_one({'requester': requester, 'accepter': accepter})
-		notifications(accepter, requester, "@" + requester + " has sent you a friend request!")
-		return 'HTML 200'
+		friend_request = {'requester': requester, 'accepter': accepter}
+		polyglot_db.friendRequests.insert(friend_request)
+		#notifications(accepter, requester, "@" + requester + " has sent you a friend request!")
+		return jsonify(str(friend_request)), 200
 	elif request.method == 'DELETE':
-		if accepted == 'False':
-			friendRequests = SID.friendRequests
-			friendRequests.delete_one({'requester': requester, 'accepter': accepter})
-			return 'HTML 200'
-		elif accepted == 'True':
-			requesterData = SID.userList.find({"userName": requester})
-			accepterData = SID.userList.find({"userName": accepter})
-			requesterFriends = requesterData[0]['friends']
-			accepterFriends = accepterData[0]['friends']
-			requesterFriends.append(accepter)
-			accepterFriends.append(requester)
-			requesterID = requesterData[0]['_id']
-			accepterID = accepterData[0]['_id']
-			SID.userList.update_one({'_id': requesterID},{'$set': {'friends': requesterFriends}}, upsert=False)
-			SID.userList.update_one({'_id':accepterID}, {'$set': {'friends': accepterFriends}}, upsert=False )
-			friendRequests = SID.friendRequests
-			friendRequests.delete_one({'requester': requester, 'accepter': accepter})
-			notifications(requester, accepter, "You are now friends with" + accepter + "!")
-			notifications(accepter, requester, "You are now friends with" + requester + "!")
-			return 'HTML 200'
+		friend_request = {'requester': requester, 'accepter': accepter}
+		if accepted == False:
+			polyglot_db.friendRequests.remove(friend_request)
+			return []
+		elif accepted == True:
+			requester = polyglot_db.users.find({"username": requester})[0]
+			accepter = polyglot_db.users.find({"username": accepter})[0]
+			requester_friends = requester['friends']
+			accepter_friends = accepter['friends']
+			requester_friends.append(accepter)
+			accepter_friends.append(requester)
+			polyglot_db.users.update({'_id': requester['_id']},{'$set': {'friends': requester_friends}}, upsert=False)
+			polyglot_db.users.update({'_id': accepter['_id']},{'$set': {'friends': accepter_friends}}, upsert=False)
+			polyglot_db.friendRequests.remove(friend_request)
+			results = dict()
+			results["friends"] = accepter_friends
+			#notifications(requester, accepter, "You are now friends with" + accepter + "!")
+			#notifications(accepter, requester, "You are now friends with" + requester + "!")
+			return jsonify(results), 200
+	"""
 	elif request.method == 'GET':
 		friendRequests = SID.friendRequests
 		requestList = friendRequests.find({'accepter': accepter})
@@ -225,7 +234,8 @@ def friendRequests(accepter, requester = '', accepted = 'False'):
 				'friends': requester[0]['friends']
 				})
 		return jsonify(data)
-
+	"""
+"""
 #TODO: Rename to follow convention
 #LanguageProgress
 #Obtains User's Data
