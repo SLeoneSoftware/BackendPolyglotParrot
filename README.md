@@ -15,7 +15,8 @@ This was made as part of a social network app. But, it can be modified to easily
 To use:
 
 1) Clone the Project and cd into it
-2) python (or python3) main.py
+2) Ensure MongoDB is running
+3) python (or python3) main.py
 
 
 
